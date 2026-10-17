@@ -39,7 +39,7 @@ zod is a peer dependency. A client without its own schemas adds no zod to the we
 1. Create a project in the [Relay panel](https://relay.drugovlab.ru).
 2. Create an event type and its fields. The type key is shown under its name: `/v1/events/<key>` — the SDK sends events by this key.
 3. Connect channels to the type — where events are delivered.
-4. On the type's «Подключение» (Connection) tab or in the project settings, add your site origins to the allowed list, e.g. `https://example.com` and `http://localhost:5173` for development. The public key `pk_…` is shown there too.
+4. On the type's «Подключение» (Connection) tab or in the project settings, add your site domain to the allowed list, e.g. `example.com` and `localhost` for development. Scheme and port do not matter, subdomains are included: `example.com` also allows `www.example.com`. To accept events only from a subdomain, add just that subdomain: `shop.example.com` does not allow `example.com`. The public key `pk_…` is shown there too.
 
 The secret key `sk_…` is needed only for sending from a server and for the CLI. The panel shows it once, when the project is created; a new one is issued in the project settings with «Перевыпустить» (Reissue).
 
@@ -143,7 +143,7 @@ In React, Vue and other frameworks the steps are the same: build an object from 
 
 ### Sending from a server
 
-From a backend, events are sent with the secret key: the allowed origins list and captcha are not checked. Example — a Next.js route handler:
+From a backend, events are sent with the secret key: the allowed domains list and captcha are not checked. Example — a Next.js route handler:
 
 ```ts
 // app/api/lead/route.ts
@@ -168,7 +168,7 @@ export async function POST(request: Request) {
 
 | Key | Where | What it can do |
 |---|---|---|
-| `publicKey` (`pk_…`) | browser | send events from allowed origins |
+| `publicKey` (`pk_…`) | browser | send events from allowed domains |
 | `secretKey` (`sk_…`) | server, CLI | send events and apply configuration |
 
 The secret key does not work in the browser: `createRelay` throws with it when it sees `window`. Keep it in server and CI environment variables.
@@ -242,7 +242,7 @@ await relay.events.lead.send(data, { captchaToken });
 | `validation` | `RelayValidationError` | the data failed validation | show the errors from `fields` |
 | `rate_limit` | `RelayRateLimitError` | too many requests | retry after `retryAfter` seconds |
 | `network` | `RelayNetworkError` | Relay is unreachable or did not respond | retry later |
-| `config` | `RelayConfigError` | wrong key, origin not allowed, no such type | fix the setup |
+| `config` | `RelayConfigError` | wrong key, domain not allowed, no such type | fix the setup |
 
 Checking `kind` narrows the error type in TypeScript: after `error.kind === 'validation'`, `error.fields` is available.
 

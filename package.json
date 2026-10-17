@@ -1,6 +1,6 @@
 {
   "name": "@drugovlab/relay-sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "TypeScript SDK for Relay: send form submissions and other events from websites, apps and servers to messengers, email and external systems, with zod validation and configuration as code.",
   "license": "MIT",
   "repository": {

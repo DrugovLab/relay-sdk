@@ -21,6 +21,8 @@ export const DEFAULT_URL = 'https://relay.drugovlab.ru';
 const DEFAULT_TIMEOUT_MS = 10_000;
 // Сервер применяет конфигурацию в транзакции до 30 с.
 const CONFIG_TIMEOUT_MS = 60_000;
+// Паузы перед повторами отправки после сетевой ошибки и 5xx.
+export const RETRY_DELAYS_MS = [500, 1_500];
 
 // publicKey — в браузере (сайт должен быть в списке разрешённых проекта),
 // secretKey is server-only.
@@ -40,6 +42,9 @@ export type Schemas = Record<string, z.ZodType<Record<string, unknown>>>;
 export interface SendOptions {
   // Токен капчи из её виджета, если у типа она включена.
   captchaToken?: string;
+  // Ключ события: Relay создаёт событие с ним один раз. По умолчанию — новый
+  // на каждый вызов; свой нужен, чтобы повтор отправки формы не задвоил её.
+  idempotencyKey?: string;
 }
 
 export type SendResult =
@@ -295,9 +300,15 @@ function eventClient(
       `/v1/events/${encodeURIComponent(slug)}`,
       {
         body,
-        headers: options?.captchaToken
-          ? { 'x-captcha-token': options.captchaToken }
-          : undefined,
+        headers: {
+          'idempotency-key': options?.idempotencyKey ?? newIdempotencyKey(),
+          ...(options?.captchaToken
+            ? { 'x-captcha-token': options.captchaToken }
+            : {}),
+        },
+        // Повтор с тем же ключом не создаёт второе событие, если первый
+        // запрос дошёл, а ответ потерялся.
+        retryDelaysMs: RETRY_DELAYS_MS,
       },
     );
     if (typeof id !== 'string') throw invalidReply();
@@ -430,6 +441,12 @@ export async function fetchConfig(options: {
   return reply as unknown as ConfigBody;
 }
 
+interface RequestOptions {
+  body?: unknown;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+}
+
 class Transport {
   private readonly url: string;
   private readonly timeoutMs: number;
@@ -450,15 +467,25 @@ class Transport {
   async request(
     method: 'GET' | 'POST' | 'PUT',
     path: string,
-    {
-      body,
-      headers: extraHeaders,
-      timeoutMs = this.timeoutMs,
-    }: {
-      body?: unknown;
-      headers?: Record<string, string>;
-      timeoutMs?: number;
-    } = {},
+    options: RequestOptions & { retryDelaysMs?: number[] } = {},
+  ): Promise<Record<string, unknown>> {
+    const delays = options.retryDelaysMs ?? [];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.requestOnce(method, path, options);
+      } catch (error) {
+        if (!(error instanceof RelayNetworkError) || attempt >= delays.length) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+      }
+    }
+  }
+
+  private async requestOnce(
+    method: 'GET' | 'POST' | 'PUT',
+    path: string,
+    { body, headers: extraHeaders, timeoutMs = this.timeoutMs }: RequestOptions,
   ): Promise<Record<string, unknown>> {
     const url = new URL(this.url + path);
     const headers: Record<string, string> = { ...extraHeaders };
@@ -538,6 +565,15 @@ const CONFIG_ERRORS = ['captcha_not_configured'];
 function invalidReply(): RelayNetworkError {
   return new RelayNetworkError(
     'Relay responded in an unexpected format: check the Relay url.',
+  );
+}
+
+// randomUUID есть только на https и localhost, getRandomValues — везде.
+function newIdempotencyKey(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
   );
 }
 

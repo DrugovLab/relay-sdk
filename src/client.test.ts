@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { createRelay } from './client';
+import { createRelay, RETRY_DELAYS_MS } from './client';
 import { defineRelay, env } from './config';
 import {
   RelayConfigError,
@@ -11,6 +11,9 @@ import {
 import { phone } from './phone';
 
 const URL_BASE = 'https://relay.example';
+
+// Повторы без пауз: тесты проверяют число попыток, а не ожидание.
+RETRY_DELAYS_MS.fill(0);
 
 function fakeFetch(
   status: number,
@@ -56,7 +59,10 @@ describe('send', () => {
     const [url, init] = fetch.mock.calls[0];
     expect(String(url)).toBe(`${URL_BASE}/v1/events/lead?key=pk_1`);
     expect(init?.method).toBe('POST');
-    expect(init?.headers).toEqual({ 'content-type': 'application/json' });
+    expect(init?.headers).toEqual({
+      'content-type': 'application/json',
+      'idempotency-key': expect.stringMatching(/^[0-9a-f-]{32,36}$/),
+    });
     // Номер уходит как введён: приводит сервер.
     expect(JSON.parse(init?.body as string)).toEqual({
       name: 'Иван',
@@ -79,9 +85,62 @@ describe('send', () => {
     await relay.events.lead.send({ name: 'Иван' }, { captchaToken: 't1' });
     await relay.events.lead.safeSend({ name: 'Иван' }, { captchaToken: 't2' });
     expect(fetch.mock.calls.map(([, init]) => init?.headers)).toEqual([
-      { 'content-type': 'application/json', 'x-captcha-token': 't1' },
-      { 'content-type': 'application/json', 'x-captcha-token': 't2' },
+      expect.objectContaining({ 'x-captcha-token': 't1' }),
+      expect.objectContaining({ 'x-captcha-token': 't2' }),
     ]);
+  });
+
+  it('повтор после сетевой ошибки и 5xx — с тем же ключом события', async () => {
+    const flaky = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'unavailable' }), { status: 503 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 'e1' }), { status: 202 }),
+      );
+    const relay = createRelay({
+      url: URL_BASE,
+      publicKey: 'pk_1',
+      fetch: flaky,
+    });
+    await expect(relay.events.lead.send({ name: 'Иван' })).resolves.toEqual({
+      id: 'e1',
+    });
+    const keys = flaky.mock.calls.map(
+      ([, init]) =>
+        (init!.headers as Record<string, string>)['idempotency-key'],
+    );
+    expect(keys).toHaveLength(3);
+    expect(new Set(keys).size).toBe(1);
+  });
+
+  it('новый ключ на каждую отправку, свой — из idempotencyKey', async () => {
+    const fetch = fakeFetch(202, { id: 'e1' });
+    const relay = createRelay({ url: URL_BASE, publicKey: 'pk_1', fetch });
+    await relay.events.lead.send({});
+    await relay.events.lead.send({});
+    await relay.events.lead.safeSend({}, { idempotencyKey: 'form-1' });
+    const keys = fetch.mock.calls.map(
+      ([, init]) =>
+        (init!.headers as Record<string, string>)['idempotency-key'],
+    );
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[2]).toBe('form-1');
+  });
+
+  it('не повторяет ошибки данных и настройки', async () => {
+    for (const status of [400, 403, 422]) {
+      const fetch = fakeFetch(status, {
+        error: 'x',
+        message: 'Ошибка.',
+        errors: status === 400 ? { name: { code: 'required' } } : undefined,
+      });
+      const relay = createRelay({ url: URL_BASE, publicKey: 'pk_1', fetch });
+      await relay.events.lead.safeSend({});
+      expect(fetch).toHaveBeenCalledTimes(1);
+    }
   });
 
   it('своя схема не пропустила — запроса нет, ошибки по полям', async () => {
@@ -153,14 +212,20 @@ describe('send', () => {
   });
 
   it('5xx и обрыв — сетевая ошибка', async () => {
+    const unavailableFetch = fakeFetch(503, {
+      error: 'unavailable',
+      message: 'Нет базы.',
+    });
     const unavailable = createRelay({
       url: URL_BASE,
       publicKey: 'pk_1',
-      fetch: fakeFetch(503, { error: 'unavailable', message: 'Нет базы.' }),
+      fetch: unavailableFetch,
     });
     await expect(unavailable.events.lead.send({})).rejects.toBeInstanceOf(
       RelayNetworkError,
     );
+    // Первая попытка и два повтора.
+    expect(unavailableFetch).toHaveBeenCalledTimes(3);
     const offline = createRelay({
       url: URL_BASE,
       publicKey: 'pk_1',

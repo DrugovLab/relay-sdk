@@ -16,7 +16,7 @@ The Relay panel is in Russian; panel labels below are quoted as they appear, wit
 - [Installation](#installation)
 - [Quick start](#quick-start): panel setup, first event, connecting a form, sending from a server
 - [Keys](#keys)
-- [Sending events](#sending-events)
+- [Sending events](#sending-events): field values, validation, captcha, retries
 - [Errors](#errors)
 - [Configuration as code](#configuration-as-code)
 - [CLI](#cli)
@@ -233,6 +233,18 @@ If captcha is enabled for the event type, pass the token from its widget, e.g. Y
 await relay.events.lead.send(data, { captchaToken });
 ```
 
+### Retries
+
+Each `send` gets an idempotency key. On a network error or a 5xx response the SDK retries twice with the same key: if the first request reached Relay and only the reply was lost, the retry returns the same event id instead of creating a second event.
+
+If the visitor submits the form again after a `network` error, pass the same key yourself, created once per filled form:
+
+```ts
+const idempotencyKey = crypto.randomUUID();
+// on every submit of this form
+await relay.events.lead.safeSend(data, { idempotencyKey });
+```
+
 ## Errors
 
 `send` throws, and `safeSend` returns, an error with a `kind` field:
@@ -241,7 +253,7 @@ await relay.events.lead.send(data, { captchaToken });
 |---|---|---|---|
 | `validation` | `RelayValidationError` | the data failed validation | show the errors from `fields` |
 | `rate_limit` | `RelayRateLimitError` | too many requests | retry after `retryAfter` seconds |
-| `network` | `RelayNetworkError` | Relay is unreachable or did not respond | retry later |
+| `network` | `RelayNetworkError` | Relay is unreachable or did not respond, after the SDK's own retries | keep the entered data, ask to try again |
 | `config` | `RelayConfigError` | wrong key, domain not allowed, no such type | fix the setup |
 
 Checking `kind` narrows the error type in TypeScript: after `error.kind === 'validation'`, `error.fields` is available.
@@ -503,8 +515,8 @@ Exactly one key is required.
 
 | | |
 |---|---|
-| `send(data, { captchaToken? })` | `Promise<{ id }>`, throws on error |
-| `safeSend(data, { captchaToken? })` | `Promise<{ ok: true, id } \| { ok: false, error }>` |
+| `send(data, { captchaToken?, idempotencyKey? })` | `Promise<{ id }>`, throws on error |
+| `safeSend(data, { captchaToken?, idempotencyKey? })` | `Promise<{ ok: true, id } \| { ok: false, error }>` |
 | `fetchSchema({ fallback? })` | `Promise<ZodObject>` — the type schema from Relay |
 | `schema` | your own event schema or `undefined` |
 

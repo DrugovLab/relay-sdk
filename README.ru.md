@@ -14,7 +14,7 @@ TypeScript SDK для [Relay](https://relay.drugovlab.ru) — сервиса, к
 - [Установка](#установка)
 - [Быстрый старт](#быстрый-старт): подготовка в панели, первое событие, подключение формы, отправка с сервера
 - [Ключи](#ключи)
-- [Отправка событий](#отправка-событий)
+- [Отправка событий](#отправка-событий): значения полей, проверка, капча, повторы
 - [Ошибки](#ошибки)
 - [Конфигурация из кода](#конфигурация-из-кода)
 - [CLI](#cli)
@@ -231,6 +231,18 @@ relay.events.lead.schema; // та же схема — для формы
 await relay.events.lead.send(data, { captchaToken });
 ```
 
+### Повторы
+
+Каждый `send` получает ключ идемпотентности. При сетевой ошибке или ответе 5xx SDK повторяет запрос дважды с тем же ключом: если первый запрос дошёл до Relay и потерялся только ответ, повтор вернёт id того же события, а не создаст второе.
+
+Если посетитель отправляет форму ещё раз после ошибки `network`, передайте тот же ключ сами — один на заполненную форму:
+
+```ts
+const idempotencyKey = crypto.randomUUID();
+// при каждой отправке этой формы
+await relay.events.lead.safeSend(data, { idempotencyKey });
+```
+
 ## Ошибки
 
 `send` бросает, а `safeSend` возвращает ошибку с полем `kind`:
@@ -239,7 +251,7 @@ await relay.events.lead.send(data, { captchaToken });
 |---|---|---|---|
 | `validation` | `RelayValidationError` | данные не прошли проверку | показать ошибки из `fields` |
 | `rate_limit` | `RelayRateLimitError` | превышен лимит запросов | повторить через `retryAfter` секунд |
-| `network` | `RelayNetworkError` | Relay недоступен или не ответил | повторить позже |
+| `network` | `RelayNetworkError` | Relay недоступен или не ответил после повторов SDK | сохранить введённые данные, предложить отправить ещё раз |
 | `config` | `RelayConfigError` | неверный ключ, домен не разрешён, нет такого типа | исправить настройку |
 
 Проверка `kind` уточняет тип ошибки в TypeScript: после `error.kind === 'validation'` доступно `error.fields`.
@@ -501,8 +513,8 @@ const schema = await relay.events.lead.fetchSchema({ fallback: lead });
 
 | | |
 |---|---|
-| `send(data, { captchaToken? })` | `Promise<{ id }>`, при ошибке бросает |
-| `safeSend(data, { captchaToken? })` | `Promise<{ ok: true, id } \| { ok: false, error }>` |
+| `send(data, { captchaToken?, idempotencyKey? })` | `Promise<{ id }>`, при ошибке бросает |
+| `safeSend(data, { captchaToken?, idempotencyKey? })` | `Promise<{ ok: true, id } \| { ok: false, error }>` |
 | `fetchSchema({ fallback? })` | `Promise<ZodObject>` — схема типа из Relay |
 | `schema` | своя схема события или `undefined` |
 

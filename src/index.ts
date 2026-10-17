@@ -1,0 +1,43 @@
+export {
+  createRelay,
+  type ConfigChange,
+  type EventClient,
+  type PushOptions,
+  type PushResult,
+  type Relay,
+  type RelayAuth,
+  type RelayOptions,
+  type Schemas,
+  type SendOptions,
+  type SendResult,
+  type ServerOptions,
+  type ServerRelay,
+} from './client';
+export {
+  defineRelay,
+  env,
+  type ChannelDefinition,
+  type ConfigEvents,
+  type EmailChannel,
+  type EnvRef,
+  type EventDefinition,
+  type RelayTelegramChannel,
+  type RelayConfig,
+  type RouteDefinition,
+  type Secret,
+  type TelegramChannel,
+  type TelegramRecipient,
+  type WebhookChannel,
+} from './config';
+export {
+  RelayConfigError,
+  RelayError,
+  RelayNetworkError,
+  RelayRateLimitError,
+  RelayValidationError,
+  type AnyRelayError,
+  type FieldError,
+  type FieldErrors,
+  type RelayErrorKind,
+} from './errors';
+export { phone } from './phone';

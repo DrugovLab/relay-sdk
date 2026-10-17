@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  # Инструменты разработки (vitest, oxlint) требуют Node 22, а пакет
+  # поддерживает Node от 20.12: на нём проверяется собранный пакет.
+  node-20:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.12'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node -e "import('./dist/index.js').then((sdk) => { if (typeof sdk.createRelay !== 'function') process.exit(1); })"
+      - run: node -e "if (typeof require('./dist/index.cjs').createRelay !== 'function') process.exit(1)"
+      - run: node dist/cli.js --help

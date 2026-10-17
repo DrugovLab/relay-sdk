@@ -1,0 +1,81 @@
+{
+  "name": "@drugovlab/relay-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for Relay: send form submissions and other events from websites, apps and servers to messengers, email and external systems, with zod validation and configuration as code.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DrugovLab/relay-sdk.git"
+  },
+  "homepage": "https://github.com/DrugovLab/relay-sdk#readme",
+  "bugs": "https://github.com/DrugovLab/relay-sdk/issues",
+  "keywords": [
+    "relay",
+    "form",
+    "forms",
+    "form-backend",
+    "contact-form",
+    "leads",
+    "webhook",
+    "telegram",
+    "email",
+    "notifications",
+    "events",
+    "zod",
+    "typescript"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.ru.md"
+  ],
+  "bin": {
+    "relay": "./dist/cli.js"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "jiti": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "0.27.7",
+    "oxlint": "^1.85.0",
+    "prettier": "^3.9.8",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3",
+    "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  }
+}

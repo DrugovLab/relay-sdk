@@ -1,0 +1,129 @@
+import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import { defineRelay, env } from './config';
+import { buildConfigBody } from './config-body';
+import { phone } from './phone';
+
+const config = defineRelay({
+  channels: {
+    sales: { type: 'relay_telegram' },
+    panelBot: { type: 'telegram' },
+    own: {
+      type: 'telegram',
+      name: 'Свой бот',
+      botToken: env('TG_TOKEN'),
+      recipients: [
+        { name: 'Анна', chatId: 1 },
+        { chatId: 2, projectTopic: true },
+      ],
+    },
+    mail: {
+      type: 'email',
+      host: 'smtp.example.com',
+      port: 465,
+      secure: true,
+      user: 'robot@example.com',
+      pass: env('SMTP_PASS'),
+      from: 'robot@example.com',
+      to: ['sales@example.com'],
+    },
+    crm: {
+      type: 'webhook',
+      url: env('CRM_URL'),
+      headers: { Authorization: env('CRM_TOKEN'), 'X-Env': 'prod' },
+    },
+  },
+  events: {
+    lead: {
+      name: 'Заявка',
+      schema: z.object({ name: z.string(), phone: phone() }),
+      send: {
+        sales: { defaultTemplate: '<b>{{name}}</b>' },
+        crm: { template: '{"name": {{name}}}' },
+        mail: true,
+        'from-panel': true,
+      },
+    },
+    ping: { name: 'Проверка', schema: z.object({}) },
+  },
+});
+
+const ENV = {
+  TG_TOKEN: '1:abc',
+  SMTP_PASS: 'secret',
+  CRM_URL: 'https://crm.example/hook',
+  CRM_TOKEN: 'Bearer t',
+};
+
+describe('buildConfigBody', () => {
+  it('тело PUT /api/v1/config: секреты из env; без токена в коде — токен из панели', () => {
+    expect(buildConfigBody(config, ENV)).toEqual({
+      warnings: [],
+      body: {
+        channels: {
+          sales: { type: 'relay_telegram', config: {} },
+          panelBot: { type: 'telegram', config: {} },
+          own: {
+            type: 'telegram',
+            name: 'Свой бот',
+            config: {
+              botToken: '1:abc',
+              recipients: [
+                { name: 'Анна', chatId: 1 },
+                { chatId: 2, projectTopic: true },
+              ],
+            },
+          },
+          mail: {
+            type: 'email',
+            config: {
+              host: 'smtp.example.com',
+              port: 465,
+              secure: true,
+              user: 'robot@example.com',
+              pass: 'secret',
+              from: 'robot@example.com',
+              to: ['sales@example.com'],
+            },
+          },
+          crm: {
+            type: 'webhook',
+            config: {
+              url: 'https://crm.example/hook',
+              headers: { Authorization: 'Bearer t', 'X-Env': 'prod' },
+            },
+          },
+        },
+        events: {
+          lead: {
+            name: 'Заявка',
+            schema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                phone: { type: 'string', format: 'phone' },
+              },
+              required: ['name', 'phone'],
+            },
+            send: {
+              sales: { defaultTemplate: '<b>{{name}}</b>' },
+              crm: { template: '{"name": {{name}}}' },
+              mail: true,
+              'from-panel': true,
+            },
+          },
+          ping: {
+            name: 'Проверка',
+            schema: { type: 'object', properties: {} },
+          },
+        },
+      },
+    });
+  });
+
+  it('нет переменных окружения — одна ошибка со всеми именами', () => {
+    expect(() => buildConfigBody(config, { TG_TOKEN: '1:abc' })).toThrow(
+      'Missing environment variables: SMTP_PASS, CRM_URL, CRM_TOKEN.',
+    );
+  });
+});

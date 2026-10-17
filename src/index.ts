@@ -30,6 +30,7 @@ export {
   type WebhookChannel,
 } from './config';
 export {
+  RelayCaptchaError,
   RelayConfigError,
   RelayError,
   RelayNetworkError,

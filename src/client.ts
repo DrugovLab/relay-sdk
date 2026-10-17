@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import {
+  RelayCaptchaError,
   RelayConfigError,
   RelayError,
   RelayNetworkError,
@@ -536,6 +537,12 @@ class Transport {
       reply?.message ?? `Relay responded with ${response.status}.`;
     if (response.status === 400 && reply?.errors) {
       throw new RelayValidationError(message, reply.errors);
+    }
+    if (
+      response.status === 403 &&
+      (reply?.error === 'captcha_required' || reply?.error === 'captcha_failed')
+    ) {
+      throw new RelayCaptchaError(message, reply.error);
     }
     if (response.status === 429) {
       const header = response.headers.get('retry-after');

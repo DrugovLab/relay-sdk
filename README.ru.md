@@ -250,9 +250,10 @@ await relay.events.lead.safeSend(data, { idempotencyKey });
 | kind | Класс | Причина | Что делать |
 |---|---|---|---|
 | `validation` | `RelayValidationError` | данные не прошли проверку | показать ошибки из `fields` |
+| `captcha` | `RelayCaptchaError` | нет токена капчи (`code: 'captcha_required'`) или она не пройдена (`'captcha_failed'`) | сбросить виджет и попросить пройти её снова |
 | `rate_limit` | `RelayRateLimitError` | превышен лимит запросов | повторить через `retryAfter` секунд |
 | `network` | `RelayNetworkError` | Relay недоступен или не ответил после повторов SDK | сохранить введённые данные, предложить отправить ещё раз |
-| `config` | `RelayConfigError` | неверный ключ, домен не разрешён, нет такого типа | исправить настройку |
+| `config` | `RelayConfigError` | неверный ключ, домен не разрешён, нет такого типа; `code` — код ошибки сервера | исправить настройку |
 
 Проверка `kind` уточняет тип ошибки в TypeScript: после `error.kind === 'validation'` доступно `error.fields`.
 

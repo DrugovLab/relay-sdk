@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createRelay, RETRY_DELAYS_MS } from './client';
 import { defineRelay, env } from './config';
 import {
+  RelayCaptchaError,
   RelayConfigError,
   RelayNetworkError,
   RelayRateLimitError,
@@ -128,6 +129,32 @@ describe('send', () => {
     );
     expect(keys[0]).not.toBe(keys[1]);
     expect(keys[2]).toBe('form-1');
+  });
+
+  it('капча не пройдена — kind captcha с кодом, прочие 403 — config', async () => {
+    for (const code of ['captcha_required', 'captcha_failed']) {
+      const relay = createRelay({
+        url: URL_BASE,
+        publicKey: 'pk_1',
+        fetch: fakeFetch(403, { error: code, message: 'Капча.' }),
+      });
+      const result = await relay.events.lead.safeSend({});
+      expect(!result.ok && result.error).toMatchObject({
+        kind: 'captcha',
+        code,
+      });
+      expect(!result.ok && result.error).toBeInstanceOf(RelayCaptchaError);
+    }
+    const origin = createRelay({
+      url: URL_BASE,
+      publicKey: 'pk_1',
+      fetch: fakeFetch(403, { error: 'origin_not_allowed', message: 'Домен.' }),
+    });
+    const result = await origin.events.lead.safeSend({});
+    expect(!result.ok && result.error).toMatchObject({
+      kind: 'config',
+      code: 'origin_not_allowed',
+    });
   });
 
   it('не повторяет ошибки данных и настройки', async () => {

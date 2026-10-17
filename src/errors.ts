@@ -1,7 +1,9 @@
 // Ошибки отправки. kind — чтобы без instanceof решить, что делать:
-// validation — показать ошибки полей, rate_limit — повторить позже,
-// network — повторить, config — исправить ключ, адрес или тип события.
-export type RelayErrorKind = 'validation' | 'rate_limit' | 'network' | 'config';
+// validation — показать ошибки полей, captcha — пройти капчу снова,
+// rate_limit — повторить позже, network — повторить, config — исправить ключ,
+// адрес или тип события.
+export type RelayErrorKind =
+  'validation' | 'captcha' | 'rate_limit' | 'network' | 'config';
 
 export interface FieldError {
   code: string;
@@ -24,6 +26,20 @@ export class RelayValidationError extends RelayError {
   ) {
     super(message);
     this.name = 'RelayValidationError';
+  }
+}
+
+// Нет токена капчи (captcha_required) или она не пройдена (captcha_failed):
+// сбросить виджет и попросить пройти её снова.
+export class RelayCaptchaError extends RelayError {
+  readonly kind = 'captcha';
+
+  constructor(
+    message: string,
+    readonly code: 'captcha_required' | 'captcha_failed',
+  ) {
+    super(message);
+    this.name = 'RelayCaptchaError';
   }
 }
 
@@ -71,6 +87,7 @@ export class RelayConfigError extends RelayError {
 // error.kind === 'validation' → error.fields.
 export type AnyRelayError =
   | RelayValidationError
+  | RelayCaptchaError
   | RelayRateLimitError
   | RelayNetworkError
   | RelayConfigError;

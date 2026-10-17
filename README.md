@@ -252,9 +252,10 @@ await relay.events.lead.safeSend(data, { idempotencyKey });
 | kind | Class | Cause | What to do |
 |---|---|---|---|
 | `validation` | `RelayValidationError` | the data failed validation | show the errors from `fields` |
+| `captcha` | `RelayCaptchaError` | no captcha token (`code: 'captcha_required'`) or the captcha failed (`'captcha_failed'`) | reset the widget and ask to pass it again |
 | `rate_limit` | `RelayRateLimitError` | too many requests | retry after `retryAfter` seconds |
 | `network` | `RelayNetworkError` | Relay is unreachable or did not respond, after the SDK's own retries | keep the entered data, ask to try again |
-| `config` | `RelayConfigError` | wrong key, domain not allowed, no such type | fix the setup |
+| `config` | `RelayConfigError` | wrong key, domain not allowed, no such type; `code` is the server error code | fix the setup |
 
 Checking `kind` narrows the error type in TypeScript: after `error.kind === 'validation'`, `error.fields` is available.
 

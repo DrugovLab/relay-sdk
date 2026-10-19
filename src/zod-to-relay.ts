@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { RelayConfigError } from './errors';
 import type { RelayFieldSchema, RelayOption, RelaySchema } from './json-schema';
 import { optionTitles } from './options';
+import { fileAccept } from './file';
 import { isPhoneCheck } from './phone';
 
 export interface ConversionResult {
@@ -127,6 +128,23 @@ function normalizeField(
   const fail = (text: string): never => {
     throw new RelayConfigError(`${path}: ${text}`);
   };
+  // Файл: z.file(), file('image/*') или их список.
+  const inner = unwrap(field);
+  if (inner._zod.def.type === 'file') return fileField(json, inner);
+  const element = (inner._zod.def as { element?: z.ZodType }).element;
+  if (
+    json.type === 'array' &&
+    element &&
+    unwrap(element)._zod.def.type === 'file'
+  ) {
+    return {
+      type: 'array',
+      ...(json.title !== undefined && { title: json.title as string }),
+      items: fileField(json.items as Json, unwrap(element)) as never,
+      ...(json.minItems !== undefined && { minItems: json.minItems as number }),
+      ...(json.maxItems !== undefined && { maxItems: json.maxItems as number }),
+    };
+  }
   if (json.anyOf || json.oneOf || Array.isArray(json.type)) {
     fail('null and union types are not supported.');
   }
@@ -189,7 +207,6 @@ function normalizeField(
     if (result.maximum === SAFE_INT) delete result.maximum;
   }
   // Подписи из options() — oneOf из const и title.
-  const inner = unwrap(field);
   if (Array.isArray(result.enum)) {
     const oneOf = labeledOptions(result.enum as string[], optionTitles(inner));
     if (oneOf) {
@@ -197,7 +214,6 @@ function normalizeField(
       delete result.enum;
     }
   }
-  const element = (inner._zod.def as { element?: z.ZodType }).element;
   if (json.type === 'array' && element) {
     const items = result.items as { enum: string[] };
     const oneOf = labeledOptions(items.enum, optionTitles(unwrap(element)));
@@ -261,6 +277,27 @@ function dictionaryField(
     ...(json.title !== undefined && { title: json.title as string }),
     additionalProperties: values as RelayFieldSchema['additionalProperties'] &
       object,
+  };
+}
+
+// Файл в схеме Relay: { type: 'string', format: 'binary', contentMediaType }.
+// Типы — из file('…') или z.file().mime([...]).
+function fileField(json: Json, schema: z.ZodType): RelayFieldSchema {
+  const checks = (schema._zod.def as { checks?: z.core.$ZodCheck[] }).checks;
+  const accept =
+    checks
+      ?.map((check) => fileAccept((check._zod.def as { fn?: unknown }).fn))
+      .find((value) => value !== undefined) ??
+    (Array.isArray(json.anyOf)
+      ? (json.anyOf as Json[])
+          .map((item) => item.contentMediaType as string)
+          .join(', ')
+      : (json.contentMediaType as string | undefined));
+  return {
+    type: 'string',
+    format: 'binary',
+    ...(json.title !== undefined && { title: json.title as string }),
+    ...(accept && { contentMediaType: accept }),
   };
 }
 
@@ -389,7 +426,9 @@ function unportedChecks(path: string, field: z.ZodType): string[] {
     if (
       def.checks?.some(
         (check) =>
-          check._zod.def.check === 'custom' && !isPhoneCheck(check._zod.def.fn),
+          check._zod.def.check === 'custom' &&
+          !isPhoneCheck(check._zod.def.fn) &&
+          fileAccept(check._zod.def.fn) === undefined,
       )
     ) {
       warnings.push(
@@ -398,6 +437,17 @@ function unportedChecks(path: string, field: z.ZodType): string[] {
     }
     // transform, pipe и preprocess — всё это pipe. send отправляет результат,
     // а схема Relay построена по входу.
+    // Размер файла Relay не знает: у него предел на все файлы события.
+    if (
+      def.type === 'file' &&
+      def.checks?.some((check) =>
+        ['min_size', 'max_size'].includes(check._zod.def.check),
+      )
+    ) {
+      warnings.push(
+        `${path}: file size checks run only on the client; Relay limits all files of an event to 20 MB together.`,
+      );
+    }
     if (def.type === 'pipe') {
       warnings.push(
         `${path}: transform and pipe run only on the client: Relay receives the result and validates it against the input schema.`,

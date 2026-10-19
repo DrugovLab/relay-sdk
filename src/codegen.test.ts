@@ -299,3 +299,40 @@ describe('configSource: словарь', () => {
     expect(buildConfigBody(config, {}).body.events).toEqual(events);
   });
 });
+
+describe('configSource: файлы', () => {
+  it('файл — file(), список — z.array(file()), push даёт то же', async () => {
+    const events: ConfigBody['events'] = {
+      job: {
+        name: 'Отклик',
+        schema: {
+          type: 'object',
+          properties: {
+            resume: {
+              type: 'string',
+              format: 'binary',
+              title: 'Резюме',
+              contentMediaType: 'application/pdf',
+            },
+            photos: {
+              type: 'array',
+              items: { type: 'string', format: 'binary' },
+              maxItems: 3,
+            },
+          },
+          required: ['resume'],
+        },
+      },
+    };
+    const { source } = configSource({ channels: {}, events });
+    expect(source).toContain(
+      `import { defineRelay, file } from '${PACKAGE_NAME}';`,
+    );
+    expect(source).toContain(
+      "resume: file('application/pdf').meta({ title: 'Резюме' }),",
+    );
+    expect(source).toContain('photos: z.array(file()).max(3).optional(),');
+    const config = await load(source);
+    expect(buildConfigBody(config, {}).body.events).toEqual(events);
+  });
+});

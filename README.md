@@ -200,6 +200,7 @@ Events are sent as JSON. Relay does not coerce types: a number sent as a string 
 | Several from a list | `z.array(z.enum([...]))` | an array of options: `['Delivery', 'Assembly']` |
 | Options with labels | `options({ pro: 'Pro plan' })` | the value (`'pro'`); people see the label |
 | Key — value | `z.record(z.string(), z.string())` | an object of strings: `{ utm_source: 'google' }` |
+| File | `file()`, `file('image/*, application/pdf')` | a `File`; several — `z.array(file())` |
 
 With `options()` the site sends a stable value, and the form, Telegram, email and the Relay log show the label: renaming an option does not change the site code. The webhook receives the value. `z.array(options({...}))` works for several from a list.
 
@@ -237,6 +238,33 @@ relay.events.lead.schema; // the same schema — for the form
 `phone()` accepts a number in any form: `8 (999) 123-45-67`, `+1 202 555 0143`, `380501234567`. Before the request it checks the characters and the number of digits; Relay validates the number by country rules and stores it in E.164: `+12025550143`.
 
 Without schemas, only Relay validates the data. Types are then set explicitly, as in the quick start, or taken from the configuration: `createRelay<typeof config>` — see [Frontend](#frontend).
+
+### Files
+
+A file field takes a `File` — from `<input type="file">`, a drag-and-drop zone or `new File(...)` on a server. With files in the data, `send` sends the event as `multipart/form-data`; without them — JSON, as usual.
+
+```ts
+import { createRelay, file } from '@drugovlab/relay-sdk';
+import { z } from 'zod';
+
+const relay = createRelay({
+  publicKey: 'pk_…',
+  schemas: {
+    job: z.object({
+      name: z.string(),
+      resume: file('application/pdf, image/*'),
+      photos: z.array(file('image/*')).max(5).optional(),
+    }),
+  },
+});
+
+const input = document.querySelector<HTMLInputElement>('input[type=file]')!;
+await relay.events.job.safeSend({ name: 'Anna', resume: input.files![0] });
+```
+
+- `file(accept)` — allowed types separated by commas, like `accept` of `<input type="file">`; a wrong type is a `validation` error with the code `contentMediaType`.
+- All files of an event together — up to 20 MB, a field — up to 10 files.
+- Relay delivers files as attachments to Telegram and email; a webhook gets download links.
 
 ### Captcha
 
@@ -443,6 +471,7 @@ Relay stores the type schema in a subset of JSON Schema. The SDK converts to it:
 | `z.enum([...])` | choice from a list |
 | `options({ value: 'Label' })` | choice from a list with labels (`oneOf` with `const` and `title`) |
 | `z.record(z.string(), z.string())`, values `.max()` | key — value (an object of strings) |
+| `file()`, `file(accept)`, `z.file().mime([...])`, `z.array(file())` | file and several files (`format: binary`, `contentMediaType`) |
 | `z.array(z.enum([...]))`, `.min()`, `.max()` | several from a list |
 | `.optional()`, `.default(value)` | optional field and default value |
 | `.meta({ title })` | field label |
@@ -540,13 +569,14 @@ Exactly one key is required.
 
 Only on a client with `secretKey` and `config`. Options: `dryRun`, `prune`. Returns `{ applied, changes, warnings }`.
 
-### defineRelay, env, phone, options, pageMeta
+### defineRelay, env, phone, options, pageMeta, file
 
 - `defineRelay({ channels?, events })` — the configuration; suggests channel keys in `send`.
 - `env(name)` — a reference to an environment variable for a secret.
 - `phone()` — a zod schema for a phone number.
 - `options({ value: 'Label' })` — a choice from a list with labels.
 - `pageMeta()` — UTM tags, page and referrer for a key — value field; `{}` outside the browser.
+- `file(accept?)` — a zod schema for a file field.
 
 ## Requirements
 

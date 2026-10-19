@@ -198,6 +198,7 @@ const result = await relay.events.lead.safeSend(data); // { ok: true, id } | { o
 | Несколько из списка | `z.array(z.enum([...]))` | массив вариантов: `['Доставка', 'Сборка']` |
 | Варианты с подписями | `options({ pro: 'Тариф Про' })` | значение (`'pro'`); люди видят подпись |
 | Ключ — значение | `z.record(z.string(), z.string())` | объект строк: `{ utm_source: 'yandex' }` |
+| Файл | `file()`, `file('image/*, application/pdf')` | `File`; несколько — `z.array(file())` |
 
 С `options()` сайт отправляет постоянное значение, а форма, Telegram, почта и журнал Relay показывают подпись: переименование варианта не меняет код сайта. Вебхук получает значение. Для нескольких из списка — `z.array(options({...}))`.
 
@@ -235,6 +236,33 @@ relay.events.lead.schema; // та же схема — для формы
 `phone()` принимает номер в любом виде: `8 (999) 123-45-67`, `+7 999 1234567`, `380501234567`. До запроса проверяются символы и число цифр, по правилам стран номер проверяет Relay и хранит в формате E.164: `+79991234567`.
 
 Без схем данные проверяет только Relay. Типы тогда задаются явно, как в быстром старте, или берутся из конфигурации: `createRelay<typeof config>` — см. [Фронтенд](#фронтенд).
+
+### Файлы
+
+Поле-файл принимает `File` — из `<input type="file">`, зоны перетаскивания или `new File(...)` на сервере. Если в данных есть файлы, `send` отправляет событие как `multipart/form-data`, без них — JSON, как обычно.
+
+```ts
+import { createRelay, file } from '@drugovlab/relay-sdk';
+import { z } from 'zod';
+
+const relay = createRelay({
+  publicKey: 'pk_…',
+  schemas: {
+    job: z.object({
+      name: z.string(),
+      resume: file('application/pdf, image/*'),
+      photos: z.array(file('image/*')).max(5).optional(),
+    }),
+  },
+});
+
+const input = document.querySelector<HTMLInputElement>('input[type=file]')!;
+await relay.events.job.safeSend({ name: 'Анна', resume: input.files![0] });
+```
+
+- `file(accept)` — разрешённые типы через запятую, как `accept` у `<input type="file">`; файл другого типа — ошибка `validation` с кодом `contentMediaType`.
+- Все файлы события вместе — до 20 МБ, в поле — до 10 файлов.
+- В Telegram и почту Relay доставляет файлы вложениями, вебхук получает ссылки на скачивание.
 
 ### Капча
 
@@ -441,6 +469,7 @@ Relay хранит схему типа в подмножестве JSON Schema. 
 | `z.enum([...])` | выбор из списка |
 | `options({ значение: 'Подпись' })` | выбор из списка с подписями (`oneOf` из `const` и `title`) |
 | `z.record(z.string(), z.string())`, значения `.max()` | ключ — значение (объект строк) |
+| `file()`, `file(accept)`, `z.file().mime([...])`, `z.array(file())` | файл и несколько файлов (`format: binary`, `contentMediaType`) |
 | `z.array(z.enum([...]))`, `.min()`, `.max()` | несколько из списка |
 | `.optional()`, `.default(value)` | необязательное поле и значение по умолчанию |
 | `.meta({ title })` | подпись поля |
@@ -538,13 +567,14 @@ const schema = await relay.events.lead.fetchSchema({ fallback: lead });
 
 Только у клиента с `secretKey` и `config`. Опции: `dryRun`, `prune`. Возвращает `{ applied, changes, warnings }`.
 
-### defineRelay, env, phone, options, pageMeta
+### defineRelay, env, phone, options, pageMeta, file
 
 - `defineRelay({ channels?, events })` — конфигурация; подсказывает ключи каналов в `send`.
 - `env(name)` — ссылка на переменную окружения для секрета.
 - `phone()` — zod-схема телефона.
 - `options({ значение: 'Подпись' })` — выбор из списка с подписями.
 - `pageMeta()` — UTM-метки, страница и источник для поля «ключ — значение»; вне браузера — `{}`.
+- `file(accept?)` — zod-схема поля-файла.
 
 ## Требования
 

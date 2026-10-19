@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { splitFlags } from './pattern';
+import { file } from './file';
 import { options } from './options';
 import { phone } from './phone';
 
@@ -9,7 +10,9 @@ import { phone } from './phone';
 export interface RelayFieldSchema {
   type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';
   title?: string;
-  format?: 'email' | 'uri' | 'date' | 'date-time' | 'time' | 'phone';
+  format?: 'email' | 'uri' | 'date' | 'date-time' | 'time' | 'phone' | 'binary';
+  // Только у файла: разрешённые типы через запятую, как accept.
+  contentMediaType?: string;
   enum?: unknown[];
   // Варианты с подписями: const — значение, title — подпись для людей.
   oneOf?: RelayOption[];
@@ -20,7 +23,13 @@ export interface RelayFieldSchema {
   exclusiveMinimum?: number;
   exclusiveMaximum?: number;
   // Несколько из списка: элементы — строки из enum или oneOf.
-  items?: { type: 'string'; enum?: string[]; oneOf?: RelayOption<string>[] };
+  items?: {
+    type: 'string';
+    enum?: string[];
+    oneOf?: RelayOption<string>[];
+    format?: 'binary';
+    contentMediaType?: string;
+  };
   minItems?: number;
   maxItems?: number;
   // Словарь «ключ → строка»: метки и метаданные сайта.
@@ -97,12 +106,17 @@ function fieldSchema(field: RelayFieldSchema): z.ZodType {
       );
     }
     case 'array': {
-      let list = z.array(stringOptions(field.items ?? {}));
+      let list = z.array(
+        field.items?.format === 'binary'
+          ? file(field.items.contentMediaType)
+          : stringOptions(field.items ?? {}),
+      );
       if (field.minItems !== undefined) list = list.min(field.minItems);
       if (field.maxItems !== undefined) list = list.max(field.maxItems);
       return list;
     }
     case 'string': {
+      if (field.format === 'binary') return file(field.contentMediaType);
       if (field.enum || field.oneOf) return stringOptions(field);
       let text = z.string();
       if (field.minLength !== undefined) text = text.min(field.minLength);
@@ -162,6 +176,7 @@ function formatSchema(
       return z.iso.time();
     case 'phone':
       return phone();
+    case 'binary':
     case undefined:
       return null;
   }

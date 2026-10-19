@@ -300,7 +300,10 @@ function eventClient(
       'POST',
       `/v1/events/${encodeURIComponent(slug)}`,
       {
-        body,
+        // С файлами — multipart: в JSON файл не передать.
+        body: hasFiles(body)
+          ? toFormData(body as Record<string, unknown>)
+          : body,
         headers: {
           'idempotency-key': options?.idempotencyKey ?? newIdempotencyKey(),
           ...(options?.captchaToken
@@ -418,6 +421,7 @@ function fieldCode(issue: z.core.$ZodIssue, value: unknown): string {
         ? 'const'
         : 'enum';
     case 'custom':
+      if (typeof issue.params?.code === 'string') return issue.params.code;
       return issue.params?.format === 'phone' ? 'format' : 'custom';
     default:
       return issue.code;
@@ -495,9 +499,13 @@ class Transport {
     } else {
       headers.authorization = `Bearer ${this.options.secretKey}`;
     }
-    if (body !== undefined) headers['content-type'] = 'application/json';
+    // FormData браузер и Node отправляют сами, с границей частей в типе.
+    const form = body instanceof FormData;
+    if (body !== undefined && !form) {
+      headers['content-type'] = 'application/json';
+    }
     // До запроса: данные не в JSON (BigInt, циклы) — ошибка в коде, а не сети.
-    const json = body === undefined ? undefined : JSON.stringify(body);
+    const json = body === undefined || form ? body : JSON.stringify(body);
 
     // AbortController, а не AbortSignal.timeout: того нет в Safari до 16.
     // Таймаут действует и на чтение тела.
@@ -564,6 +572,46 @@ class Transport {
       reply?.errors,
     );
   }
+}
+
+function isFile(value: unknown): value is Blob {
+  return typeof Blob !== 'undefined' && value instanceof Blob;
+}
+
+function hasFiles(data: unknown): boolean {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    Object.values(data).some(
+      (value) => isFile(value) || (Array.isArray(value) && value.some(isFile)),
+    )
+  );
+}
+
+// Поля — частями формы, как их разбирает сервер: список — повтором ключа,
+// словарь — ключ[название], остальное — строкой.
+function toFormData(data: Record<string, unknown>): FormData {
+  const form = new FormData();
+  const append = (key: string, value: unknown) => {
+    if (isFile(value)) {
+      form.append(key, value, value instanceof File ? value.name : 'file');
+    } else {
+      form.append(key, String(value));
+    }
+  };
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) append(key, item);
+    } else if (typeof value === 'object' && !isFile(value)) {
+      for (const [name, item] of Object.entries(value)) {
+        append(`${key}[${name}]`, item);
+      }
+    } else {
+      append(key, value);
+    }
+  }
+  return form;
 }
 
 // Ошибки 5xx, которые исправляет владелец проекта, а не повтор.

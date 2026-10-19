@@ -31,6 +31,7 @@ export function configSource(body: ConfigBody): GeneratedConfig {
   const notes: string[] = [];
   let usesPhone = false;
   let usesOptions = false;
+  let usesFile = false;
 
   const channels: Record<string, unknown> = {};
   for (const [key, channel] of Object.entries(body.channels)) {
@@ -60,6 +61,7 @@ export function configSource(body: ConfigBody): GeneratedConfig {
     );
     usesPhone ||= schema.usesPhone;
     usesOptions ||= schema.usesOptions;
+    usesFile ||= schema.usesFile;
     notes.push(...schema.notes);
     events[slug] = {
       name: event.name,
@@ -71,6 +73,7 @@ export function configSource(body: ConfigBody): GeneratedConfig {
 
   const imports = [
     'defineRelay',
+    ...(usesFile ? ['file'] : []),
     ...(usesOptions ? ['options'] : []),
     ...(usesPhone ? ['phone'] : []),
   ].join(', ');
@@ -102,16 +105,19 @@ export function schemaSource(
   text: string;
   usesPhone: boolean;
   usesOptions: boolean;
+  usesFile: boolean;
   notes: string[];
 } {
   const required = new Set(schema.required ?? []);
   const notes: string[] = [];
   let usesPhone = false;
   let usesOptions = false;
+  let usesFile = false;
   const fields = Object.entries(schema.properties).map(([name, field]) => {
     const fieldPath = `${path}.${name}`;
     usesPhone ||= field.format === 'phone';
     usesOptions ||= hasTitles(field.oneOf) || hasTitles(field.items?.oneOf);
+    usesFile ||= field.format === 'binary' || field.items?.format === 'binary';
     let code = fieldSource(field, fieldPath, notes);
     const meta = [
       ...(field.title !== undefined ? [`title: ${quote(field.title)}`] : []),
@@ -142,8 +148,13 @@ export function schemaSource(
         : `z.object({\n${lines}\n${indent}})`,
     usesPhone,
     usesOptions,
+    usesFile,
     notes,
   };
+}
+
+function fileSource(accept: string | undefined): string {
+  return accept === undefined ? 'file()' : `file(${quote(accept)})`;
 }
 
 function hasTitles(oneOf: RelayOption[] | undefined): boolean {
@@ -222,12 +233,17 @@ function fieldSource(
       return `z.record(z.string(), z.string()${maxLength === undefined ? '' : `.max(${maxLength})`})`;
     }
     case 'array': {
-      let code = `z.array(${stringOptionsSource(field.items ?? {})})`;
+      let code = `z.array(${
+        field.items?.format === 'binary'
+          ? fileSource(field.items.contentMediaType)
+          : stringOptionsSource(field.items ?? {})
+      })`;
       if (field.minItems !== undefined) code += `.min(${field.minItems})`;
       if (field.maxItems !== undefined) code += `.max(${field.maxItems})`;
       return code;
     }
     case 'string': {
+      if (field.format === 'binary') return fileSource(field.contentMediaType);
       let code = FORMATS[field.format ?? ''] ?? 'z.string()';
       if (field.minLength !== undefined) code += `.min(${field.minLength})`;
       if (field.maxLength !== undefined) code += `.max(${field.maxLength})`;

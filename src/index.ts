@@ -42,4 +42,5 @@ export {
   type RelayErrorKind,
 } from './errors';
 export { options } from './options';
+export { pageMeta } from './page-meta';
 export { phone } from './phone';

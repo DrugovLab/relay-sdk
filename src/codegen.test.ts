@@ -273,3 +273,29 @@ describe('configSource: подписи вариантов и время', () => 
     expect(buildConfigBody(config, {}).body.events).toEqual(events);
   });
 });
+
+describe('configSource: словарь', () => {
+  it('object со строками — z.record, push даёт то же', async () => {
+    const events: ConfigBody['events'] = {
+      lead: {
+        name: 'Заявка',
+        schema: {
+          type: 'object',
+          properties: {
+            meta: {
+              type: 'object',
+              title: 'Метки',
+              additionalProperties: { type: 'string', maxLength: 200 },
+            },
+          },
+        },
+      },
+    };
+    const { source } = configSource({ channels: {}, events });
+    expect(source).toContain(
+      "meta: z.record(z.string(), z.string().max(200)).meta({ title: 'Метки' }).optional(),",
+    );
+    const config = await load(source);
+    expect(buildConfigBody(config, {}).body.events).toEqual(events);
+  });
+});

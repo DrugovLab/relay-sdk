@@ -7,7 +7,7 @@ import { phone } from './phone';
 // string, number, integer, boolean, array (несколько значений из списка) и
 // ключевыми словами из SPEC Relay.
 export interface RelayFieldSchema {
-  type: 'string' | 'number' | 'integer' | 'boolean' | 'array';
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';
   title?: string;
   format?: 'email' | 'uri' | 'date' | 'date-time' | 'time' | 'phone';
   enum?: unknown[];
@@ -23,6 +23,9 @@ export interface RelayFieldSchema {
   items?: { type: 'string'; enum?: string[]; oneOf?: RelayOption<string>[] };
   minItems?: number;
   maxItems?: number;
+  // Словарь «ключ → строка»: метки и метаданные сайта.
+  additionalProperties?: { type: 'string'; maxLength?: number };
+  maxProperties?: number;
   pattern?: string;
   const?: true;
   default?: unknown;
@@ -46,6 +49,9 @@ export interface RelaySchema {
   properties: Record<string, RelayFieldSchema>;
   required?: string[];
 }
+
+// Ключ словаря в Relay — от 1 до 100 символов.
+const MAX_KEY_LENGTH = 100;
 
 // Схема Relay → zod-схема для форм. Неизвестные поля zod отбрасывает, как и сервер.
 export function relaySchemaToZod(schema: RelaySchema): z.ZodObject {
@@ -82,6 +88,13 @@ function fieldSchema(field: RelayFieldSchema): z.ZodType {
         number = number.lt(field.exclusiveMaximum);
       }
       return number;
+    }
+    case 'object': {
+      const maxLength = field.additionalProperties?.maxLength;
+      return z.record(
+        z.string().min(1).max(MAX_KEY_LENGTH),
+        maxLength === undefined ? z.string() : z.string().max(maxLength),
+      );
     }
     case 'array': {
       let list = z.array(stringOptions(field.items ?? {}));

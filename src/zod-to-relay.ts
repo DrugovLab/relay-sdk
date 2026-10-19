@@ -12,7 +12,14 @@ export interface ConversionResult {
 
 type Json = Record<string, unknown>;
 
-const FIELD_TYPES = ['string', 'number', 'integer', 'boolean', 'array'];
+const FIELD_TYPES = [
+  'string',
+  'number',
+  'integer',
+  'boolean',
+  'array',
+  'object',
+];
 const KEPT = [
   'type',
   'title',
@@ -123,9 +130,8 @@ function normalizeField(
   if (json.anyOf || json.oneOf || Array.isArray(json.type)) {
     fail('null and union types are not supported.');
   }
-  if (json.type === 'object') {
-    fail('nested objects are not supported.');
-  }
+  // Объект в Relay — только словарь строк: z.record(z.string(), z.string()).
+  if (json.type === 'object') return dictionaryField(json, fail);
   if (!FIELD_TYPES.includes(json.type as string)) {
     fail(
       `the type must be a string, number, boolean or z.array(z.enum([...])).`,
@@ -219,6 +225,43 @@ function labeledOptions(
       ? { const: value, title: titles[value] }
       : { const: value },
   );
+}
+
+function dictionaryField(
+  json: Json,
+  fail: (text: string) => never,
+): RelayFieldSchema {
+  const values = json.additionalProperties;
+  const keys = json.propertyNames as Json | undefined;
+  const isString = (node: unknown, allowed: string[]): boolean =>
+    typeof node === 'object' &&
+    node !== null &&
+    (node as Json).type === 'string' &&
+    Object.keys(node).every((key) => key === 'type' || allowed.includes(key));
+  if (
+    !isString(values, ['maxLength']) ||
+    (keys !== undefined && !isString(keys, ['minLength', 'maxLength'])) ||
+    Object.keys(json).some(
+      (key) =>
+        ![
+          '$schema',
+          'type',
+          'title',
+          'additionalProperties',
+          'propertyNames',
+        ].includes(key),
+    )
+  ) {
+    fail(
+      'objects are supported only as z.record(z.string(), z.string()): keys of 1–100 characters, string values.',
+    );
+  }
+  return {
+    type: 'object',
+    ...(json.title !== undefined && { title: json.title as string }),
+    additionalProperties: values as RelayFieldSchema['additionalProperties'] &
+      object,
+  };
 }
 
 function isEnumItems(items: unknown): boolean {

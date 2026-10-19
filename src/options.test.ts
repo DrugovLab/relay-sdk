@@ -90,3 +90,50 @@ describe('options', () => {
 function expectTypeOf(value: 'pro' | 'basic'): void {
   void value;
 }
+
+describe('словарь: z.record(z.string(), z.string())', () => {
+  it('в схеме Relay — object со строками, обратно — z.record', () => {
+    const { schema } = zodToRelaySchema(
+      z.object({
+        meta: z
+          .record(z.string(), z.string())
+          .meta({ title: 'Метки' })
+          .optional(),
+        short: z.record(z.string(), z.string().max(50)),
+      }),
+    );
+    expect(schema.properties).toEqual({
+      meta: {
+        type: 'object',
+        title: 'Метки',
+        additionalProperties: { type: 'string' },
+      },
+      short: {
+        type: 'object',
+        additionalProperties: { type: 'string', maxLength: 50 },
+      },
+    });
+    const form = relaySchemaToZod(schema);
+    expect(form.parse({ short: { utm_source: 'google' } })).toEqual({
+      short: { utm_source: 'google' },
+    });
+    expect(form.safeParse({ short: { a: 'x'.repeat(51) } }).success).toBe(
+      false,
+    );
+    expect(form.safeParse({ short: { a: 1 } }).success).toBe(false);
+    expect(zodToRelaySchema(form).schema.properties).toEqual(schema.properties);
+  });
+
+  it('другие объекты — ошибка', () => {
+    for (const field of [
+      z.object({ a: z.string() }),
+      z.record(z.string(), z.number()),
+      z.record(z.string(), z.string().min(2)),
+      z.record(z.enum(['a', 'b']), z.string()),
+    ]) {
+      expect(() => zodToRelaySchema(z.object({ meta: field }))).toThrow(
+        'objects are supported only as z.record',
+      );
+    }
+  });
+});

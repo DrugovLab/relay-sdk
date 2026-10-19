@@ -69,7 +69,10 @@ describe('zodToRelaySchema', () => {
   });
 
   it.each([
-    [z.object({ a: z.object({ b: z.string() }) }), 'nested objects'],
+    [
+      z.object({ a: z.object({ b: z.string() }) }),
+      'objects are supported only as z.record',
+    ],
     [z.object({ a: z.array(z.string()) }), 'arrays are supported only'],
     [z.object({ a: z.string().nullable() }), 'null and union'],
     [z.object({ a: z.uuid() }), 'format "uuid"'],

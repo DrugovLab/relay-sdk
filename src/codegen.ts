@@ -212,6 +212,15 @@ function fieldSource(
       }
       return code;
     }
+    case 'object': {
+      if (field.maxProperties !== undefined) {
+        notes.push(
+          `${path}: in code without maxProperties: zod records have no size limit.`,
+        );
+      }
+      const maxLength = field.additionalProperties?.maxLength;
+      return `z.record(z.string(), z.string()${maxLength === undefined ? '' : `.max(${maxLength})`})`;
+    }
     case 'array': {
       let code = `z.array(${stringOptionsSource(field.items ?? {})})`;
       if (field.minItems !== undefined) code += `.min(${field.minItems})`;

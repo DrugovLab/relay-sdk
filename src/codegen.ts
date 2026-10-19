@@ -1,6 +1,11 @@
 import type { ConfigBody } from './config-body';
 import { RelayConfigError } from './errors';
-import type { RelayFieldSchema, RelaySchema } from './json-schema';
+import {
+  optionValues,
+  type RelayFieldSchema,
+  type RelayOption,
+  type RelaySchema,
+} from './json-schema';
 import { splitFlags } from './pattern';
 
 export const PACKAGE_NAME = '@drugovlab/relay-sdk';
@@ -25,6 +30,7 @@ export function configSource(body: ConfigBody): GeneratedConfig {
   const keptInPanel: string[] = [];
   const notes: string[] = [];
   let usesPhone = false;
+  let usesOptions = false;
 
   const channels: Record<string, unknown> = {};
   for (const [key, channel] of Object.entries(body.channels)) {
@@ -53,6 +59,7 @@ export function configSource(body: ConfigBody): GeneratedConfig {
       `events.${slug}.schema`,
     );
     usesPhone ||= schema.usesPhone;
+    usesOptions ||= schema.usesOptions;
     notes.push(...schema.notes);
     events[slug] = {
       name: event.name,
@@ -62,7 +69,11 @@ export function configSource(body: ConfigBody): GeneratedConfig {
     };
   }
 
-  const imports = usesPhone ? 'defineRelay, phone' : 'defineRelay';
+  const imports = [
+    'defineRelay',
+    ...(usesOptions ? ['options'] : []),
+    ...(usesPhone ? ['phone'] : []),
+  ].join(', ');
   const config: Record<string, unknown> = {};
   if (Object.keys(channels).length > 0) config.channels = channels;
   config.events = events;
@@ -90,19 +101,24 @@ export function schemaSource(
 ): {
   text: string;
   usesPhone: boolean;
+  usesOptions: boolean;
   notes: string[];
 } {
   const required = new Set(schema.required ?? []);
   const notes: string[] = [];
   let usesPhone = false;
+  let usesOptions = false;
   const fields = Object.entries(schema.properties).map(([name, field]) => {
     const fieldPath = `${path}.${name}`;
     usesPhone ||= field.format === 'phone';
+    usesOptions ||= hasTitles(field.oneOf) || hasTitles(field.items?.oneOf);
     let code = fieldSource(field, fieldPath, notes);
     const meta = [
       ...(field.title !== undefined ? [`title: ${quote(field.title)}`] : []),
       // Выбор из целых: z.literal даёт number, тип задаёт meta.
-      ...(field.type === 'integer' && field.enum ? [`type: 'integer'`] : []),
+      ...(field.type === 'integer' && optionValues(field)
+        ? [`type: 'integer'`]
+        : []),
     ];
     if (meta.length > 0) code += `.meta({ ${meta.join(', ')} })`;
     if (field.default !== undefined) {
@@ -125,8 +141,31 @@ export function schemaSource(
         ? 'z.object({})'
         : `z.object({\n${lines}\n${indent}})`,
     usesPhone,
+    usesOptions,
     notes,
   };
+}
+
+function hasTitles(oneOf: RelayOption[] | undefined): boolean {
+  return !!oneOf?.some((option) => option.title !== undefined);
+}
+
+// options({ pro: 'Тариф Про' }) для вариантов с подписями, иначе z.enum.
+function stringOptionsSource(owner: {
+  enum?: unknown[];
+  oneOf?: RelayOption[];
+}): string {
+  if (hasTitles(owner.oneOf)) {
+    const entries = owner.oneOf!.map(
+      (option) =>
+        `${key(String(option.const))}: ${quote(option.title ?? String(option.const))}`,
+    );
+    return `options({ ${entries.join(', ')} })`;
+  }
+  const values = (optionValues(owner) ?? []).map((value) =>
+    quote(String(value)),
+  );
+  return `z.enum([${values.join(', ')}])`;
 }
 
 const ENUM_IGNORED = [
@@ -145,7 +184,8 @@ function fieldSource(
   path: string,
   notes: string[],
 ): string {
-  if (field.enum) {
+  const values = optionValues(field);
+  if (values) {
     const ignored = ENUM_IGNORED.filter((name) => field[name] !== undefined);
     if (field.type === 'boolean' || ignored.length > 0) {
       const what =
@@ -153,8 +193,8 @@ function fieldSource(
       notes.push(`${path}: in code only the list of values, without ${what}.`);
     }
     return field.type === 'string'
-      ? `z.enum([${field.enum.map((value) => quote(String(value))).join(', ')}])`
-      : `z.literal([${field.enum.map((value) => JSON.stringify(value)).join(', ')}])`;
+      ? stringOptionsSource(field)
+      : `z.literal([${values.map((value) => JSON.stringify(value)).join(', ')}])`;
   }
   switch (field.type) {
     case 'boolean':
@@ -173,8 +213,7 @@ function fieldSource(
       return code;
     }
     case 'array': {
-      const values = (field.items?.enum ?? []).map(quote).join(', ');
-      let code = `z.array(z.enum([${values}]))`;
+      let code = `z.array(${stringOptionsSource(field.items ?? {})})`;
       if (field.minItems !== undefined) code += `.min(${field.minItems})`;
       if (field.maxItems !== undefined) code += `.max(${field.maxItems})`;
       return code;
@@ -227,6 +266,7 @@ const FORMATS: Record<string, string> = {
   uri: 'z.url()',
   date: 'z.iso.date()',
   'date-time': 'z.iso.datetime({ local: true, offset: true })',
+  time: 'z.iso.time()',
   phone: 'phone()',
 };
 

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { RelayConfigError } from './errors';
-import type { RelayFieldSchema, RelaySchema } from './json-schema';
+import type { RelayFieldSchema, RelayOption, RelaySchema } from './json-schema';
+import { optionTitles } from './options';
 import { isPhoneCheck } from './phone';
 
 export interface ConversionResult {
@@ -38,6 +39,7 @@ const FORMATS: Record<string, RelayFieldSchema['format']> = {
   date: 'date',
   datetime: 'date-time',
   'date-time': 'date-time',
+  time: 'time',
   phone: 'phone',
 };
 // Проверки JSON Schema, которых нет в Relay: без них сервер пропустил бы то,
@@ -180,6 +182,21 @@ function normalizeField(
     if (result.minimum === -SAFE_INT) delete result.minimum;
     if (result.maximum === SAFE_INT) delete result.maximum;
   }
+  // Подписи из options() — oneOf из const и title.
+  const inner = unwrap(field);
+  if (Array.isArray(result.enum)) {
+    const oneOf = labeledOptions(result.enum as string[], optionTitles(inner));
+    if (oneOf) {
+      result.oneOf = oneOf;
+      delete result.enum;
+    }
+  }
+  const element = (inner._zod.def as { element?: z.ZodType }).element;
+  if (json.type === 'array' && element) {
+    const items = result.items as { enum: string[] };
+    const oneOf = labeledOptions(items.enum, optionTitles(unwrap(element)));
+    if (oneOf) result.items = { type: 'string', oneOf };
+  }
   if (
     result.const !== undefined &&
     !(json.type === 'boolean' && result.const === true)
@@ -187,6 +204,21 @@ function normalizeField(
     fail('only z.literal(true) is supported among exact values.');
   }
   return result as unknown as RelayFieldSchema;
+}
+
+// Варианты с подписями; без подписей, отличных от значений, — undefined.
+function labeledOptions(
+  values: string[],
+  titles: Record<string, string> | undefined,
+): RelayOption<string>[] | undefined {
+  if (!titles || values.every((value) => (titles[value] ?? value) === value)) {
+    return undefined;
+  }
+  return values.map((value) =>
+    titles[value] !== undefined && titles[value] !== value
+      ? { const: value, title: titles[value] }
+      : { const: value },
+  );
 }
 
 function isEnumItems(items: unknown): boolean {

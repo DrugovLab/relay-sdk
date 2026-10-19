@@ -41,4 +41,5 @@ export {
   type FieldErrors,
   type RelayErrorKind,
 } from './errors';
+export { options } from './options';
 export { phone } from './phone';

@@ -231,3 +231,45 @@ describe('configSource', () => {
     );
   });
 });
+
+describe('configSource: подписи вариантов и время', () => {
+  it('oneOf с подписями — options(), время — z.iso.time(), push даёт то же', async () => {
+    const events: ConfigBody['events'] = {
+      plan: {
+        name: 'Тариф',
+        schema: {
+          type: 'object',
+          properties: {
+            plan: {
+              type: 'string',
+              title: 'Тариф',
+              oneOf: [
+                { const: 'pro', title: 'Тариф «Про»' },
+                { const: 'basic' },
+              ],
+            },
+            extras: {
+              type: 'array',
+              items: { type: 'string', oneOf: [{ const: 'tv', title: 'ТВ' }] },
+            },
+            at: { type: 'string', format: 'time' },
+          },
+          required: ['plan'],
+        },
+      },
+    };
+    const { source } = configSource({ channels: {}, events });
+    expect(source).toContain(
+      `import { defineRelay, options } from '${PACKAGE_NAME}';`,
+    );
+    expect(source).toContain(
+      "plan: options({ pro: 'Тариф «Про»', basic: 'basic' }).meta({ title: 'Тариф' }),",
+    );
+    expect(source).toContain(
+      "extras: z.array(options({ tv: 'ТВ' })).optional(),",
+    );
+    expect(source).toContain('at: z.iso.time().optional(),');
+    const config = await load(source);
+    expect(buildConfigBody(config, {}).body.events).toEqual(events);
+  });
+});

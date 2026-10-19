@@ -194,9 +194,13 @@ Events are sent as JSON. Relay does not coerce types: a number sent as a string 
 | Number, integer | `z.number()`, `z.int()` | a number: `2.5`, `3` |
 | Date | `z.iso.date()` | `'2026-10-15'` |
 | Date and time | `z.iso.datetime()` | `'2026-10-15T12:30:00+03:00'`; without an offset — the project time zone |
+| Time | `z.iso.time()` | `'15:30'` or `'15:30:00'`, without an offset |
 | Yes/no | `z.boolean()` | `true` or `false` |
 | Choice from a list | `z.enum([...])` | one option, exactly as written in the list |
 | Several from a list | `z.array(z.enum([...]))` | an array of options: `['Delivery', 'Assembly']` |
+| Options with labels | `options({ pro: 'Pro plan' })` | the value (`'pro'`); people see the label |
+
+With `options()` the site sends a stable value, and the form, Telegram, email and the Relay log show the label: renaming an option does not change the site code. The webhook receives the value. `z.array(options({...}))` works for several from a list.
 
 - Do not send an optional field without a value: an empty string is a value too, and Relay checks its length and format.
 - Relay drops fields that are not in the type schema.
@@ -423,11 +427,12 @@ Relay stores the type schema in a subset of JSON Schema. The SDK converts to it:
 | zod | In Relay |
 |---|---|
 | `z.string()`, `.min()`, `.max()`, `.regex()`, `.startsWith()` | a string with length and pattern |
-| `z.email()`, `z.url()`, `z.iso.date()`, `z.iso.datetime()` | email, link, date, date and time formats |
+| `z.email()`, `z.url()`, `z.iso.date()`, `z.iso.datetime()`, `z.iso.time()` | email, link, date, date and time, time formats |
 | `phone()` | phone |
 | `z.number()`, `z.int()`, `.min()`, `.max()`, `.gt()`, `.lt()` | number and integer with bounds, including strict ones |
 | `z.boolean()`, `z.literal(true)` | yes/no and a required checkbox |
 | `z.enum([...])` | choice from a list |
+| `options({ value: 'Label' })` | choice from a list with labels (`oneOf` with `const` and `title`) |
 | `z.array(z.enum([...]))`, `.min()`, `.max()` | several from a list |
 | `.optional()`, `.default(value)` | optional field and default value |
 | `.meta({ title })` | field label |
@@ -435,7 +440,7 @@ Relay stores the type schema in a subset of JSON Schema. The SDK converts to it:
 Limitations:
 
 - a field has one pattern; regex flags `i`, `m`, `s` are carried over, flag `v` is not;
-- arrays only of values from a list (`z.array(z.enum([...]))`);
+- arrays only of values from a list (`z.array(z.enum([...]))` or `z.array(options({...}))`);
 - nested objects, `null` and union types are not supported — `push` names the field.
 
 ## CLI
@@ -525,11 +530,12 @@ Exactly one key is required.
 
 Only on a client with `secretKey` and `config`. Options: `dryRun`, `prune`. Returns `{ applied, changes, warnings }`.
 
-### defineRelay, env, phone
+### defineRelay, env, phone, options
 
 - `defineRelay({ channels?, events })` — the configuration; suggests channel keys in `send`.
 - `env(name)` — a reference to an environment variable for a secret.
 - `phone()` — a zod schema for a phone number.
+- `options({ value: 'Label' })` — a choice from a list with labels.
 
 ## Requirements
 

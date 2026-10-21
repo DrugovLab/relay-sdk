@@ -19,6 +19,7 @@ TypeScript SDK для [Relay](https://relay.drugovlab.ru) — сервиса, к
 - [Конфигурация из кода](#конфигурация-из-кода)
 - [CLI](#cli)
 - [Формы по схеме из Relay](#формы-по-схеме-из-relay)
+- [Проверка вебхука](#проверка-вебхука)
 - [Справочник](#справочник)
 - [Требования](#требования)
 
@@ -537,6 +538,28 @@ const schema = await relay.events.lead.fetchSchema({ fallback: lead });
 ```
 
 Возвращается zod-схема. Если Relay недоступен, — `fallback`. Код перевода схемы загружается при первом вызове и в основной бандл не входит.
+
+## Проверка вебхука
+
+Канал «Вебхук» подписывает каждый запрос заголовком `X-Relay-Signature: t=<секунды Unix>,v1=<hex HMAC-SHA256 от "<t>.<тело>">`. Секрет — в настройках канала, блок «Подпись запросов». На вашем сервере:
+
+```ts
+import { verifyWebhook } from '@drugovlab/relay-sdk';
+
+export async function POST(request: Request) {
+  const body = await request.text(); // тело как пришло, до JSON.parse
+  const ok = await verifyWebhook({
+    secret: process.env.RELAY_SIGNING_SECRET!,
+    signature: request.headers.get('x-relay-signature'),
+    body,
+  });
+  if (!ok) return new Response('invalid signature', { status: 401 });
+  const event = JSON.parse(body);
+  // ...
+}
+```
+
+Подпись старше 5 минут не принимается (`toleranceSec` меняет допуск). В Express тело как пришло даёт `express.raw({ type: 'application/json' })`.
 
 ## Справочник
 

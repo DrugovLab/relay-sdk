@@ -21,6 +21,7 @@ The Relay panel is in Russian; panel labels below are quoted as they appear, wit
 - [Configuration as code](#configuration-as-code)
 - [CLI](#cli)
 - [Forms built from the Relay schema](#forms-built-from-the-relay-schema)
+- [Verifying webhooks](#verifying-webhooks)
 - [Reference](#reference)
 - [Requirements](#requirements)
 
@@ -539,6 +540,28 @@ const schema = await relay.events.lead.fetchSchema({ fallback: lead });
 ```
 
 It returns a zod schema; if Relay is unreachable — `fallback`. The schema converter is loaded on the first call and is not part of the main bundle.
+
+## Verifying webhooks
+
+A webhook channel signs every request with `X-Relay-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`. The secret is in the channel settings, «Подпись запросов». On your server:
+
+```ts
+import { verifyWebhook } from '@drugovlab/relay-sdk';
+
+export async function POST(request: Request) {
+  const body = await request.text(); // raw body, before JSON.parse
+  const ok = await verifyWebhook({
+    secret: process.env.RELAY_SIGNING_SECRET!,
+    signature: request.headers.get('x-relay-signature'),
+    body,
+  });
+  if (!ok) return new Response('invalid signature', { status: 401 });
+  const event = JSON.parse(body);
+  // ...
+}
+```
+
+Signatures older than 5 minutes are rejected (`toleranceSec` changes it). In Express, read the raw body with `express.raw({ type: 'application/json' })`.
 
 ## Reference
 

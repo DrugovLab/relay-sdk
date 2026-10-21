@@ -45,3 +45,4 @@ export { file } from './file';
 export { options } from './options';
 export { pageMeta } from './page-meta';
 export { phone } from './phone';
+export { verifyWebhook, type VerifyWebhookOptions } from './webhook';

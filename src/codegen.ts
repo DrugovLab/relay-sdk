@@ -12,7 +12,8 @@ export const PACKAGE_NAME = '@drugovlab/relay-sdk';
 
 export interface GeneratedConfig {
   source: string;
-  // Поля, которые остались в панели: секреты, адрес и заголовки вебхука.
+  // Поля, которые остались в панели: секреты, адрес и заголовки вебхука,
+  // секреты и авторизация HTTP-запроса.
   keptInPanel: string[];
   // Что в коде выглядит иначе, чем в Relay.
   notes: string[];
@@ -24,8 +25,9 @@ class Code {
 }
 
 // Выгрузка из Relay (тело PUT /api/v1/config) → исходник relay.config.ts.
-// Секреты, адрес и заголовки вебхука сервер отдаёт как null: в код они не
-// попадают и остаются в панели.
+// Секреты, адрес и заголовки вебхука сервер отдаёт как null, секреты и
+// авторизацию HTTP-запроса — с null внутри: в код они не попадают и остаются
+// в панели.
 export function configSource(body: ConfigBody): GeneratedConfig {
   const keptInPanel: string[] = [];
   const notes: string[] = [];

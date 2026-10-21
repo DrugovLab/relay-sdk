@@ -1,6 +1,7 @@
 import {
   isEnvRef,
   type ChannelDefinition,
+  type HttpRouteRequest,
   type RelayConfig,
   type RouteDefinition,
   type Secret,
@@ -22,7 +23,10 @@ export interface ConfigBody {
       schema: RelaySchema;
       send?: Record<
         string,
-        true | { template: string } | { defaultTemplate: string }
+        | true
+        | { template: string }
+        | { defaultTemplate: string }
+        | { request: HttpRouteRequest }
       >;
     }
   >;
@@ -108,18 +112,37 @@ function channelBody(
         config: {
           ...rest,
           ...(url !== undefined && { url: resolve(url) }),
-          ...(headers && {
-            headers: Object.fromEntries(
-              Object.entries(headers).map(([header, value]) => [
-                header,
-                resolve(value),
-              ]),
-            ),
+          ...(headers && { headers: resolveValues(headers, resolve) }),
+        },
+      };
+    }
+    case 'http': {
+      const { type: _type, name: _name, auth, secrets, ...rest } = channel;
+      return {
+        type: 'http',
+        ...name,
+        config: {
+          ...rest,
+          ...(auth && {
+            auth:
+              auth.type === 'bearer'
+                ? { ...auth, token: resolve(auth.token) }
+                : { ...auth, password: resolve(auth.password) },
           }),
+          ...(secrets && { secrets: resolveValues(secrets, resolve) }),
         },
       };
     }
   }
+}
+
+function resolveValues(
+  values: Record<string, Secret>,
+  resolve: (value: Secret) => string,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(values).map(([name, value]) => [name, resolve(value)]),
+  );
 }
 
 function routesBody(
@@ -133,7 +156,9 @@ function routesBody(
         ? true
         : route.template !== undefined
           ? { template: route.template }
-          : { defaultTemplate: route.defaultTemplate };
+          : route.request !== undefined
+            ? { request: route.request }
+            : { defaultTemplate: route.defaultTemplate };
   }
   return routes;
 }

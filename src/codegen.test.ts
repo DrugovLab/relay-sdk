@@ -5,7 +5,7 @@ import { createJiti } from 'jiti';
 import { afterAll, describe, expect, it } from 'vitest';
 import { configSource, PACKAGE_NAME } from './codegen';
 import { buildConfigBody, type ConfigBody } from './config-body';
-import { isRelayConfig } from './config';
+import { isRelayConfig, type HttpRouteRequest } from './config';
 
 // Сгенерированный файл кладётся внутрь проекта: zod берётся из node_modules.
 const dir = mkdtempSync(join(__dirname, 'cli', '__fixtures__', 'pull-'));
@@ -155,6 +155,87 @@ describe('configSource', () => {
         },
       },
       crm: { type: 'webhook', name: 'CRM', config: { method: 'POST' } },
+    });
+  });
+
+  it('HTTP-запрос: секреты и авторизация — в панели, запрос маршрута — в коде', async () => {
+    const request: HttpRouteRequest = {
+      method: 'POST',
+      url: 'crm.lead.add.json',
+      query: [{ name: 'source', value: 'site' }],
+      body: {
+        format: 'form',
+        fields: [{ name: 'fields[NAME]', value: '{{name}}' }],
+      },
+      retry: { network: true, status: '500-599', maxAttempts: 3 },
+    };
+    const http: ConfigBody = {
+      channels: {
+        bitrix: {
+          type: 'http',
+          name: 'Битрикс24',
+          config: {
+            baseUrl: 'https://x.bitrix24.ru/rest/1/{{secret.token}}',
+            headers: [{ name: 'X-Source', value: 'relay' }],
+            secrets: { token: null },
+            timeoutSec: 10,
+          },
+        },
+        api: {
+          type: 'http',
+          name: 'api',
+          config: {
+            baseUrl: 'https://api.example',
+            auth: { type: 'basic', user: 'robot', password: null },
+            success: {
+              status: '200',
+              body: { check: 'contains', value: 'ok' },
+            },
+          },
+        },
+      },
+      events: {
+        lead: {
+          name: 'Заявка',
+          schema: {
+            type: 'object',
+            properties: { name: { type: 'string' } },
+            required: ['name'],
+          },
+          send: { bitrix: { request }, api: true },
+        },
+      },
+    };
+    const { source, keptInPanel } = configSource(http);
+    expect(keptInPanel).toEqual([
+      'channels.bitrix.secrets',
+      'channels.api.auth',
+    ]);
+    expect(source).not.toContain('null');
+
+    const config = await load(source);
+    const { body } = buildConfigBody(config, {});
+    expect(body.events).toEqual(http.events);
+    expect(body.channels).toEqual({
+      bitrix: {
+        type: 'http',
+        name: 'Битрикс24',
+        config: {
+          baseUrl: 'https://x.bitrix24.ru/rest/1/{{secret.token}}',
+          headers: [{ name: 'X-Source', value: 'relay' }],
+          timeoutSec: 10,
+        },
+      },
+      api: {
+        type: 'http',
+        config: {
+          baseUrl: 'https://api.example',
+          success: {
+            status: '200',
+            body: { check: 'contains', value: 'ok' },
+          },
+        },
+      },
     });
   });
 

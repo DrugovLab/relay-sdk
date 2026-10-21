@@ -396,12 +396,45 @@ The event key (`lead`) is the receiving address: do not change it after applying
 | `telegram` | `botToken?`, `recipients?` | your own bot |
 | `email` | `host`, `port`, `secure`, `user?`, `pass?`, `from`, `to?` | email over SMTP |
 | `webhook` | `url?`, `method?`, `headers?` | an HTTP request to an external system |
+| `http` | `baseUrl?`, `method?`, `headers?`, `auth?`, `secrets?`, `success?`, `retry?`, `timeoutSec?` | an HTTP request in the receiver's format |
 
 Every channel has `name` — its name in the panel; without it, the name equals the key.
 
 A Telegram recipient is `{ chatId, name?, threadId? }` or `{ chatId, projectTopic: true }`: a project topic in a private chat, created by Relay.
 
-What is not in code is managed in the panel: recipients, the bot token, the email password, the webhook URL and headers. This keeps secrets out of the repository. If a secret is needed in code, pass it with `env('NAME')`: the value is read from the environment variable when the configuration is applied. Unlike `process.env.NAME`, a missing variable stops the apply with an error listing every missing one. With `process.env`, the field silently drops out of the request, and Relay keeps the previous value from the panel.
+The `http` channel sends a request in the receiver's format. `{{secret.NAME}}` in the URL and headers is replaced with the value from `secrets`; `auth` is `{ type: 'bearer', token }` or `{ type: 'basic', user, password }`. The route sets the request: `{ request }` with a path appended to `baseUrl`, query parameters, headers and a body (`json`, `xml`, `text`, `form`, `multipart`).
+
+```ts
+channels: {
+  bitrix: {
+    type: 'http',
+    baseUrl: 'https://example.bitrix24.ru/rest/1/{{secret.token}}',
+    secrets: { token: env('BITRIX_TOKEN') },
+  },
+},
+events: {
+  lead: {
+    name: 'Website lead',
+    schema: lead,
+    send: {
+      bitrix: {
+        request: {
+          url: 'crm.lead.add.json',
+          body: {
+            format: 'form',
+            fields: [
+              { name: 'fields[TITLE]', value: 'Lead #{{_number}}' },
+              { name: 'fields[NAME]', value: '{{name}}' },
+            ],
+          },
+        },
+      },
+    },
+  },
+},
+```
+
+What is not in code is managed in the panel: recipients, the bot token, the email password, the webhook URL and headers, the URL, headers, secrets and auth of an `http` channel. This keeps secrets out of the repository. If a secret is needed in code, pass it with `env('NAME')`: the value is read from the environment variable when the configuration is applied. Unlike `process.env.NAME`, a missing variable stops the apply with an error listing every missing one. With `process.env`, the field silently drops out of the request, and Relay keeps the previous value from the panel.
 
 Relay does not create a new channel without a required field and returns an error with the path, e.g. `channels.crm.config.url`.
 
@@ -414,6 +447,7 @@ Relay does not create a new channel without a required field and returns an erro
 | `true` | the standard message: type name, number and fields |
 | `{ template }` | set by code; an edit in the panel is reset by the next apply |
 | `{ defaultTemplate }` | initial; an edit in the panel is kept |
+| `{ request }` | `http` channels only: a request instead of a template |
 
 Templates are Mustache: `{{name}}`, event number `{{_number}}`, id `{{_id}}`. Values are escaped per channel: HTML for Telegram, JSON for webhooks. A multi-select field renders as «a, b», and `{{#services}}…{{/services}}` iterates its options. `send` may also reference a channel created in the panel — by its key.
 
@@ -508,7 +542,7 @@ npx relay pull             # write relay.config.ts from Relay
 For a project already set up in the panel, `relay pull` writes its configuration to code:
 
 - schemas become zod code, templates become `defaultTemplate`;
-- secrets, recipients, the webhook URL and headers do not go into the file and stay in the panel — `pull` lists them;
+- secrets, recipients, the webhook URL and headers, the auth of an `http` channel do not go into the file and stay in the panel — `pull` lists them;
 - what looks different in code than in Relay, `pull` prints as a separate list.
 
 After `pull`, `relay push --dry-run` shows what would change when switching to code.

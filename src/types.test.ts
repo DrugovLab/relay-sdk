@@ -137,6 +137,69 @@ describe('типы', () => {
 
     defineRelay({
       channels: {
+        bitrix: {
+          type: 'http',
+          baseUrl: 'https://x.bitrix24.ru/rest/1/{{secret.token}}',
+          secrets: { token: env('BITRIX_TOKEN') },
+        },
+      },
+      events: {
+        lead: {
+          name: 'Заявка',
+          schema: lead,
+          send: {
+            bitrix: {
+              request: {
+                url: 'crm.lead.add.json',
+                body: {
+                  format: 'form',
+                  fields: [{ name: 'fields[NAME]', value: '{{name}}' }],
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    defineRelay({
+      channels: {
+        // @ts-expect-error — у basic-авторизации нужен user
+        api: { type: 'http', auth: { type: 'basic', password: 'p' } },
+      },
+      events: {},
+    });
+    defineRelay({
+      events: {
+        lead: {
+          name: 'Заявка',
+          schema: lead,
+          // @ts-expect-error — request и template вместе нельзя
+          send: { api: { request: {}, template: 'a' } },
+        },
+      },
+    });
+    defineRelay({
+      events: {
+        lead: {
+          name: 'Заявка',
+          schema: lead,
+          send: {
+            api: {
+              request: {
+                body: {
+                  format: 'multipart',
+                  // @ts-expect-error — у поля либо value, либо file
+                  fields: [{ name: 'doc', value: 'a', file: 'doc' }],
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    defineRelay({
+      channels: {
         tg: {
           type: 'telegram',
           // @ts-expect-error — у получателя с темой проекта не задаётся threadId

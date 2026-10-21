@@ -121,6 +121,75 @@ describe('buildConfigBody', () => {
     });
   });
 
+  it('HTTP-запрос: секреты и авторизация из env, запрос маршрута как есть', () => {
+    const request = {
+      url: 'crm.lead.add.json',
+      body: {
+        format: 'form' as const,
+        fields: [{ name: 'fields[NAME]', value: '{{name}}' }],
+      },
+    };
+    const http = defineRelay({
+      channels: {
+        bitrix: {
+          type: 'http',
+          baseUrl: 'https://x.bitrix24.ru/rest/1/{{secret.token}}',
+          secrets: { token: env('BITRIX_TOKEN'), source: 'site' },
+        },
+        api: {
+          type: 'http',
+          baseUrl: 'https://api.example',
+          method: 'PUT',
+          auth: { type: 'basic', user: 'robot', password: env('API_PASS') },
+          headers: [{ name: 'X-Source', value: '{{secret.source}}' }],
+        },
+        bearer: {
+          type: 'http',
+          auth: { type: 'bearer', token: env('API_TOKEN') },
+        },
+      },
+      events: {
+        lead: {
+          name: 'Заявка',
+          schema: z.object({ name: z.string() }),
+          send: { bitrix: { request }, api: true },
+        },
+      },
+    });
+    const { body } = buildConfigBody(http, {
+      BITRIX_TOKEN: 'abc',
+      API_PASS: 'pass',
+      API_TOKEN: 'tok',
+    });
+    expect(body.channels).toEqual({
+      bitrix: {
+        type: 'http',
+        config: {
+          baseUrl: 'https://x.bitrix24.ru/rest/1/{{secret.token}}',
+          secrets: { token: 'abc', source: 'site' },
+        },
+      },
+      api: {
+        type: 'http',
+        config: {
+          baseUrl: 'https://api.example',
+          method: 'PUT',
+          auth: { type: 'basic', user: 'robot', password: 'pass' },
+          headers: [{ name: 'X-Source', value: '{{secret.source}}' }],
+        },
+      },
+      bearer: {
+        type: 'http',
+        config: { auth: { type: 'bearer', token: 'tok' } },
+      },
+    });
+    expect(body.events.lead.send).toEqual({ bitrix: { request }, api: true });
+
+    expect(() => buildConfigBody(http, {})).toThrow(
+      'Missing environment variables: BITRIX_TOKEN, API_PASS, API_TOKEN.',
+    );
+  });
+
   it('нет переменных окружения — одна ошибка со всеми именами', () => {
     expect(() => buildConfigBody(config, { TG_TOKEN: '1:abc' })).toThrow(
       'Missing environment variables: SMTP_PASS, CRM_URL, CRM_TOKEN.',

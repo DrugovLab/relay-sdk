@@ -40,7 +40,8 @@ export type TelegramRecipient =
     };
 
 // Поле, которого нет в коде, ведётся в панели: получатели, секреты, адрес и
-// заголовки вебхука. Новый канал без нужного поля Relay не создаст.
+// заголовки вебхука и HTTP-запроса, авторизация HTTP-запроса. Новый канал без
+// нужного поля Relay не создаст.
 interface ChannelBase {
   // Название в панели; без него — ключ канала.
   name?: string;
@@ -79,15 +80,92 @@ export interface WebhookChannel extends ChannelBase {
   headers?: Record<string, Secret>;
 }
 
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+// Значения — шаблоны Mustache: {{name}}, {{secret.token}}.
+export interface HttpParam {
+  name: string;
+  value: string;
+}
+
+export type HttpAuth =
+  | { type: 'bearer'; token: Secret }
+  | { type: 'basic'; user: string; password: Secret };
+
+// status — коды и диапазоны через запятую: '200, 201', '200-299'.
+export interface HttpSuccess {
+  status: string;
+  body?: {
+    check: 'equals' | 'not_equals' | 'contains' | 'not_contains';
+    value: string;
+  };
+}
+
+export interface HttpRetry {
+  network: boolean;
+  status: string;
+  bodyContains?: string;
+  // 1–8.
+  maxAttempts: number;
+}
+
+// file — ключ поля-файла события.
+export type HttpBody =
+  | { format: 'json' | 'xml'; template: string }
+  | { format: 'text'; template: string; contentType: string }
+  | { format: 'form'; fields: HttpParam[] }
+  | {
+      format: 'multipart';
+      fields: (
+        | { name: string; value: string; file?: never }
+        | { name: string; file: string; value?: never }
+      )[];
+    };
+
+// Запрос маршрута в канал «HTTP-запрос». url — путь к baseUrl канала или
+// полный адрес; success, retry и timeoutSec заменяют заданные в канале.
+export interface HttpRouteRequest {
+  method?: HttpMethod;
+  url?: string;
+  query?: HttpParam[];
+  headers?: HttpParam[];
+  body?: HttpBody;
+  success?: HttpSuccess;
+  retry?: HttpRetry;
+  timeoutSec?: number;
+}
+
+// Запрос в формате получателя. baseUrl и заголовки — шаблоны: {{secret.token}}
+// подставляет значение из secrets (имя — буква, затем буквы, цифры, _).
+export interface HttpChannel extends ChannelBase {
+  type: 'http';
+  baseUrl?: string;
+  method?: HttpMethod;
+  headers?: HttpParam[];
+  auth?: HttpAuth;
+  secrets?: Record<string, Secret>;
+  success?: HttpSuccess;
+  retry?: HttpRetry;
+  // 1–30.
+  timeoutSec?: number;
+}
+
 export type ChannelDefinition =
-  TelegramChannel | RelayTelegramChannel | EmailChannel | WebhookChannel;
+  | TelegramChannel
+  | RelayTelegramChannel
+  | EmailChannel
+  | WebhookChannel
+  | HttpChannel;
 
 // true — стандартное сообщение; template — шаблон задаёт код;
-// defaultTemplate — ставится, пока шаблон не правили в панели.
+// defaultTemplate — ставится, пока шаблон не правили в панели; request —
+// запрос канала «HTTP-запрос», template и defaultTemplate ему не подходят.
+// Какое значение подходит каналу, проверяет сервер при push.
 export type RouteDefinition =
   | true
-  | { template: string; defaultTemplate?: never }
-  | { defaultTemplate: string; template?: never };
+  | { template: string; defaultTemplate?: never; request?: never }
+  | { defaultTemplate: string; template?: never; request?: never }
+  | { request: HttpRouteRequest; template?: never; defaultTemplate?: never };
 
 export type EventSchema = z.ZodObject;
 
